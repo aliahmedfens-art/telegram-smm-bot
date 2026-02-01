@@ -6,3 +6,4 @@ python-bidi==0.4.2
 Pillow==10.2.0
 qrcode==7.4.2
 aiohttp==3.9.1
+emoji==2.10.0

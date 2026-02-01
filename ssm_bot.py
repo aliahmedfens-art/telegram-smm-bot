@@ -55,12 +55,14 @@ WELCOME_BONUS = 1000  # الهدية الترحيبية
 REFERRAL_BONUS = 500  # مكافأة الدعوة
 
 # حالات المحادثة
-EXEMPTION_STATE, SUMMARIZE_STATE, QA_STATE, ADMIN_STATE = range(4)
 (
     WAITING_FOR_COURSE1, 
     WAITING_FOR_COURSE2, 
-    WAITING_FOR_COURSE3
-) = range(3)
+    WAITING_FOR_COURSE3,
+    SUMMARIZE_STATE,
+    QA_STATE,
+    ADMIN_STATE
+) = range(6)
 
 # إعداد التسجيل
 logging.basicConfig(
@@ -98,7 +100,7 @@ def init_database():
     c.execute('''CREATE TABLE IF NOT EXISTS transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
-        type TEXT,  # 'deposit', 'purchase', 'bonus', 'referral'
+        type TEXT,  -- 'deposit', 'purchase', 'bonus', 'referral'
         amount INTEGER,
         service TEXT,
         details TEXT,
@@ -152,13 +154,6 @@ def init_database():
     c.execute('''INSERT OR IGNORE INTO bot_settings (key, value) VALUES ('channel_url', '')''')
     c.execute('''INSERT OR IGNORE INTO bot_settings (key, value) VALUES ('support_username', ?)''',
              (ADMIN_USERNAME,))
-    
-    # جعل المستخدم الرئيسي مدير
-    c.execute('''SELECT user_id FROM users WHERE username = ? OR username = ?''', 
-              ('Allawi04', 'Allawi04@'))
-    admin_user = c.fetchone()
-    if admin_user:
-        c.execute('''UPDATE users SET is_admin = 1 WHERE user_id = ?''', (admin_user[0],))
     
     conn.commit()
     return conn
@@ -290,12 +285,9 @@ gemini_model = init_gemini()
 def setup_arabic_fonts():
     """إعداد الخطوط العربية والإنجليزية لإنشاء PDF"""
     try:
-        # محاولة تحميل خط عربي (يمكن تغييره لخط أفضل)
         arabic_font_path = "arial.ttf"
         
-        # إذا لم يوجد الخط، ننشئ ملف خط افتراضي بسيط
         if not os.path.exists(arabic_font_path):
-            # سنستخدم خط إنجليزي للعربية مؤقتاً (يمكنك إضافة خط عربي حقيقي لاحقاً)
             pdfmetrics.registerFont(TTFont('Arabic', 'Helvetica'))
         else:
             pdfmetrics.registerFont(TTFont('Arabic', arabic_font_path))
@@ -317,7 +309,6 @@ def extract_text_from_pdf(pdf_path: str) -> str:
         for page_num, page in enumerate(doc):
             text += f"\n--- الصفحة {page_num + 1} ---\n"
             page_text = page.get_text()
-            # تنظيف النص
             page_text = re.sub(r'\s+', ' ', page_text)
             text += page_text
         doc.close()
@@ -404,7 +395,7 @@ def create_beautiful_pdf(content: str, title: str = "ملخص دراسي") -> By
         c.setAuthor("بوت يلا نتعلم")
         c.setSubject("ملخص دراسي")
         
-        # خلفية جميلة (اختياري)
+        # خلفية جميلة
         c.setFillColorRGB(0.95, 0.95, 0.97)
         c.rect(0, 0, width, height, fill=1)
         
@@ -436,7 +427,6 @@ def create_beautiful_pdf(content: str, title: str = "ملخص دراسي") -> By
                 y_position -= 20
                 continue
                 
-            # إذا كانت الفقرة طويلة، نقسمها
             if len(para) > 100:
                 words = para.split()
                 lines = []
@@ -455,16 +445,13 @@ def create_beautiful_pdf(content: str, title: str = "ملخص دراسي") -> By
                 for line in lines:
                     if y_position < 100:
                         c.showPage()
-                        # إعادة تعيين إعدادات الصفحة الجديدة
                         c.setFillColorRGB(0.95, 0.95, 0.97)
                         c.rect(0, 0, width, height, fill=1)
                         c.setFillColorRGB(0.1, 0.1, 0.1)
                         y_position = height - 50
                     
-                    # تحديد إذا كان النص عربي أو إنجليزي
                     if any('\u0600' <= char <= '\u06FF' for char in line):
                         c.setFont("Arabic", 12)
-                        # محاذاة النص العربي لليمين
                         c.drawString(width - 550, y_position, line[:90])
                     else:
                         c.setFont("English", 11)
@@ -516,7 +503,6 @@ async def check_balance_and_access(update: Update, service: str, service_name: s
     """التحقق من الرصيد والصيانة قبل استخدام الخدمة"""
     user_id = update.effective_user.id
     
-    # التحقق من وضع الصيانة
     if get_bot_setting('maintenance_mode') == '1':
         await update.message.reply_text(
             "⚙️ البوت في وضع الصيانة حالياً. الرجاء المحاولة لاحقاً.",
@@ -524,7 +510,6 @@ async def check_balance_and_access(update: Update, service: str, service_name: s
         )
         return False
     
-    # التحقق من الحظر
     user = get_user(user_id)
     if user and user.get('is_banned'):
         await update.message.reply_text(
@@ -533,14 +518,11 @@ async def check_balance_and_access(update: Update, service: str, service_name: s
         )
         return False
     
-    # التحقق من الرصيد
     price = int(get_bot_setting(f'price_{service}', DEFAULT_PRICES.get(service, 1000)))
     
     if user and user.get('balance', 0) >= price:
-        # خصم المبلغ
         update_balance(user_id, -price, 'purchase', service)
         
-        # إرسال إشعار الشراء
         try:
             await update.message.reply_text(
                 f"✅ تم خصم {format_money(price)} لخدمة {service_name}\n"
@@ -581,27 +563,23 @@ async def start_command(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
     
-    # تسجيل المستخدم الجديد
     c = db_conn.cursor()
     c.execute('''INSERT OR IGNORE INTO users 
                  (user_id, username, first_name, last_name, referral_code) 
                  VALUES (?, ?, ?, ?, ?)''',
               (user_id, user.username, user.first_name, user.last_name, str(uuid4())[:8]))
     
-    # التحقق من رابط الدعوة
     referral_code = None
     if context.args and len(context.args) > 0:
         ref_arg = context.args[0]
         if ref_arg.startswith('ref_'):
             referral_code = ref_arg[4:]
     
-    # منح الهدية الترحيبية للمستخدم الجديد
     is_new_user = c.rowcount > 0
     if is_new_user:
         welcome_bonus = int(get_bot_setting('welcome_bonus', WELCOME_BONUS))
         update_balance(user_id, welcome_bonus, 'bonus', 'welcome')
         
-        # منح مكافأة للمدعو إذا كان هناك كود دعوة
         if referral_code:
             c.execute('''SELECT user_id FROM users WHERE referral_code = ?''', (referral_code,))
             referrer = c.fetchone()
@@ -609,11 +587,9 @@ async def start_command(update: Update, context: CallbackContext):
                 referral_bonus = int(get_bot_setting('referral_bonus', REFERRAL_BONUS))
                 update_balance(referrer[0], referral_bonus, 'referral', 'invite')
                 
-                # تسجيل المرجع
                 c.execute('''UPDATE users SET referred_by = ? WHERE user_id = ?''',
                          (referrer[0], user_id))
                 
-                # إرسال إشعار للمدعو
                 try:
                     await context.bot.send_message(
                         chat_id=referrer[0],
@@ -626,10 +602,8 @@ async def start_command(update: Update, context: CallbackContext):
     
     db_conn.commit()
     
-    # الحصول على بيانات المستخدم
     user_data = get_user(user_id)
     
-    # إنشاء لوحة المفاتيح الرئيسية
     keyboard = [
         ["📊 حساب درجة الإعفاء", "📝 تلخيص الملازم"],
         ["❓ سؤال وجواب", "📚 ملازمي ومرشحاتي"],
@@ -641,7 +615,6 @@ async def start_command(update: Update, context: CallbackContext):
     
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
-    # رسالة الترحيب
     welcome_msg = f"""
     <b>👋 أهلاً وسهلاً {user.first_name}!</b>
     
@@ -662,7 +635,6 @@ async def start_command(update: Update, context: CallbackContext):
     ⚡ <b>لكل دعوة:</b> {format_money(int(get_bot_setting('referral_bonus', REFERRAL_BONUS)))}
     """
     
-    # إضافة معلومات القناة والدعم
     channel_url = get_bot_setting('channel_url', '')
     support_user = get_bot_setting('support_username', ADMIN_USERNAME)
     
@@ -698,7 +670,6 @@ async def balance_command(update: Update, context: CallbackContext):
         💳 <b>للتعبئة راسل:</b> {get_bot_setting('support_username', ADMIN_USERNAME)}
         """
         
-        # عرض آخر 5 معاملات
         c = db_conn.cursor()
         c.execute('''SELECT type, amount, date FROM transactions 
                      WHERE user_id = ? ORDER BY date DESC LIMIT 5''', (user_id,))
@@ -730,7 +701,6 @@ async def referral_command(update: Update, context: CallbackContext):
     if user:
         referral_link = f"https://t.me/{BOT_USERNAME.replace('@', '')}?start=ref_{user.get('referral_code', '')}"
         
-        # حساب عدد المدعوين
         c = db_conn.cursor()
         c.execute('''SELECT COUNT(*) FROM users WHERE referred_by = ?''', (user_id,))
         referral_count = c.fetchone()[0]
@@ -864,10 +834,8 @@ async def get_course3(update: Update, context: CallbackContext) -> int:
             course2 = context.user_data.get('course2', 0)
             course3 = score
             
-            # حساب المعدل
             average = (course1 + course2 + course3) / 3
             
-            # تحضير النتيجة
             if average >= 90:
                 result = "🎉 <b>مبروك! أنت معفي من المادة</b> 🎉"
                 emoji = "✅"
@@ -875,7 +843,6 @@ async def get_course3(update: Update, context: CallbackContext) -> int:
                 result = "📝 <b>أنت غير معفي من المادة</b>"
                 emoji = "❌"
             
-            # إرسال النتيجة
             result_msg = f"""
             {emoji} <b>نتيجة حساب الإعفاء</b> {emoji}
             
@@ -899,7 +866,6 @@ async def get_course3(update: Update, context: CallbackContext) -> int:
                 reply_markup=ReplyKeyboardMarkup([["🏠 الرئيسية"]], resize_keyboard=True)
             )
             
-            # مسح بيانات المحادثة
             context.user_data.clear()
             return ConversationHandler.END
             
@@ -944,7 +910,6 @@ async def summarize_start(update: Update, context: CallbackContext) -> int:
 async def handle_pdf(update: Update, context: CallbackContext) -> int:
     """معالجة ملف PDF المرسل"""
     if update.message.document and update.message.document.mime_type == 'application/pdf':
-        # إشعار بدء المعالجة
         processing_msg = await update.message.reply_text(
             "⏳ <b>جاري معالجة الملف وتلخيصه...</b>\n"
             "قد يستغرق ذلك من 30 ثانية إلى دقيقة.",
@@ -952,7 +917,6 @@ async def handle_pdf(update: Update, context: CallbackContext) -> int:
         )
         
         try:
-            # تحميل الملف
             file_id = update.message.document.file_id
             file_path = await download_file_from_telegram(file_id, context)
             
@@ -964,7 +928,6 @@ async def handle_pdf(update: Update, context: CallbackContext) -> int:
                 )
                 return ConversationHandler.END
             
-            # استخراج النص
             pdf_text = extract_text_from_pdf(file_path)
             
             if len(pdf_text) < 50:
@@ -976,7 +939,6 @@ async def handle_pdf(update: Update, context: CallbackContext) -> int:
                 os.remove(file_path)
                 return ConversationHandler.END
             
-            # التلخيص باستخدام الذكاء الاصطناعي
             await processing_msg.edit_text("🤖 <b>جاري تلخيص المحتوى باستخدام الذكاء الاصطناعي...</b>", 
                                          parse_mode=ParseMode.HTML)
             
@@ -985,11 +947,9 @@ async def handle_pdf(update: Update, context: CallbackContext) -> int:
             await processing_msg.edit_text("📄 <b>جاري إنشاء ملف PDF ملخص...</b>", 
                                          parse_mode=ParseMode.HTML)
             
-            # إنشاء PDF ملخص
             pdf_buffer = create_beautiful_pdf(summary, "ملخص دراسي")
             
             if pdf_buffer:
-                # إرسال الملف
                 await update.message.reply_document(
                     document=InputFile(pdf_buffer, filename="ملخص_دراسي.pdf"),
                     caption="📚 <b>ملخص دراسي جاهز</b>\n\n"
@@ -1000,17 +960,14 @@ async def handle_pdf(update: Update, context: CallbackContext) -> int:
                     parse_mode=ParseMode.HTML
                 )
                 
-                # تنظيف الملفات المؤقتة
                 pdf_buffer.close()
             else:
-                # إذا فشل إنشاء PDF، إرسال النص فقط
                 await update.message.reply_text(
                     f"📝 <b>ملخص المحتوى:</b>\n\n{summary[:3000]}...\n\n"
                     "📌 <i>تم قص النص بسبب طوله، للحصول على النسخة الكاملة راجع الملف الأصلي.</i>",
                     parse_mode=ParseMode.HTML
                 )
             
-            # حذف الملف المؤقت
             os.remove(file_path)
             await processing_msg.delete()
             
@@ -1064,11 +1021,9 @@ async def handle_question(update: Update, context: CallbackContext) -> int:
     """معالجة السؤال المقدم"""
     question_text = ""
     
-    # استخراج السؤال من النص أو الصورة
     if update.message.text:
         question_text = update.message.text
     elif update.message.photo:
-        # في حالة الصورة، نطلب من المستخدم كتابة السؤال
         await update.message.reply_text(
             "📷 <b>لقد أرسلت صورة</b>\n\n"
             "الرجاء كتابة السؤال الموجود في الصورة نصياً:",
@@ -1084,7 +1039,10 @@ async def handle_question(update: Update, context: CallbackContext) -> int:
         return QA_STATE
     
     if question_text.lower() in ['إلغاء', '❌ إلغاء']:
-        await cancel_qa(update, context)
+        await update.message.reply_text(
+            "تم إلغاء خدمة سؤال وجواب.",
+            reply_markup=ReplyKeyboardMarkup([["🏠 الرئيسية"]], resize_keyboard=True)
+        )
         return ConversationHandler.END
     
     if len(question_text) < 5:
@@ -1095,7 +1053,6 @@ async def handle_question(update: Update, context: CallbackContext) -> int:
         )
         return QA_STATE
     
-    # إشعار بدء المعالجة
     processing_msg = await update.message.reply_text(
         "🤖 <b>جاري تحليل السؤال وإعداد الإجابة...</b>\n"
         "قد يستغرق ذلك بضع ثوانٍ.",
@@ -1103,13 +1060,10 @@ async def handle_question(update: Update, context: CallbackContext) -> int:
     )
     
     try:
-        # الحصول على الإجابة باستخدام الذكاء الاصطناعي
         answer = await answer_question_with_ai(question_text)
         
-        # تسجيل السؤال والإجابة
         log_qa(update.effective_user.id, question_text[:500], answer[:500])
         
-        # إرسال الإجابة
         await processing_msg.delete()
         await update.message.reply_text(
             f"💡 <b>إجابة على سؤالك:</b>\n\n{answer}\n\n"
@@ -1133,14 +1087,6 @@ async def handle_question(update: Update, context: CallbackContext) -> int:
     )
     return ConversationHandler.END
 
-async def cancel_qa(update: Update, context: CallbackContext) -> int:
-    """إلغاء خدمة سؤال وجواب"""
-    await update.message.reply_text(
-        "تم إلغاء خدمة سؤال وجواب.",
-        reply_markup=ReplyKeyboardMarkup([["🏠 الرئيسية"]], resize_keyboard=True)
-    )
-    return ConversationHandler.END
-
 # ========== الخدمة 4: ملازمي ومرشحاتي ==========
 async def materials_command(update: Update, context: CallbackContext):
     """عرض المواد التعليمية"""
@@ -1159,9 +1105,8 @@ async def materials_command(update: Update, context: CallbackContext):
         )
         return
     
-    # إنشاء كيبورد للمواد
     keyboard = []
-    for material in materials_list[:10]:  # عرض أول 10 مواد فقط
+    for material in materials_list[:10]:
         btn_text = f"📄 {material['name'][:20]}"
         keyboard.append([btn_text])
     
@@ -1174,17 +1119,15 @@ async def materials_command(update: Update, context: CallbackContext):
         reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     )
     
-    # حفظ المواد في context
     context.user_data['materials'] = materials_list
 
 async def handle_material_selection(update: Update, context: CallbackContext):
     """معالجة اختيار مادة"""
-    selected_text = update.message.text[2:].strip()  # إزالة الإيموجي
+    selected_text = update.message.text[2:].strip()
     materials = context.user_data.get('materials', [])
     
     for material in materials:
         if material['name'].startswith(selected_text):
-            # إرسال الملف
             try:
                 await update.message.reply_document(
                     document=material['file_id'],
@@ -1239,12 +1182,10 @@ async def admin_stats(update: Update, context: CallbackContext):
     
     stats = get_user_stats()
     
-    # إحصائيات الخدمات
     c = db_conn.cursor()
     c.execute('''SELECT service, usage_count, total_income FROM service_stats''')
     service_stats = c.fetchall()
     
-    # إحصائيات المعاملات اليومية
     c.execute('''SELECT COUNT(*), SUM(amount) FROM transactions 
                  WHERE date(date) = date('now') AND type = 'purchase' ''')
     today_stats = c.fetchone()
@@ -1276,34 +1217,12 @@ async def admin_stats(update: Update, context: CallbackContext):
         
         stats_msg += f"• {service_name}: {service_stat[1]} استخدام ({format_money(service_stat[2])})\n"
     
-    # إحصائيات المواد
     c.execute('''SELECT COUNT(*) FROM materials''')
     materials_count = c.fetchone()[0]
     
     stats_msg += f"\n📚 <b>المواد التعليمية:</b> {materials_count} مادة"
     
     await update.message.reply_text(stats_msg, parse_mode=ParseMode.HTML)
-
-async def admin_users(update: Update, context: CallbackContext):
-    """إدارة المستخدمين"""
-    user_id = update.effective_user.id
-    
-    if not is_admin(user_id):
-        return
-    
-    keyboard = [
-        ["👁️ عرض المستخدمين", "🔍 بحث عن مستخدم"],
-        ["🚫 حظر مستخدم", "✅ فك حظر مستخدم"],
-        ["👑 رفع مشرف", "⬇️ خفض مشرف"],
-        ["🔙 رجوع للوحة التحكم"]
-    ]
-    
-    await update.message.reply_text(
-        "👥 <b>إدارة المستخدمين</b>\n\n"
-        "اختر العملية المطلوبة:",
-        parse_mode=ParseMode.HTML,
-        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    )
 
 async def admin_charge(update: Update, context: CallbackContext):
     """شحن رصيد المستخدم"""
@@ -1314,8 +1233,7 @@ async def admin_charge(update: Update, context: CallbackContext):
     
     await update.message.reply_text(
         "💰 <b>شحن رصيد المستخدم</b>\n\n"
-        "أرسل <b>آيدي المستخدم</b> الذي تريد شحن رصيده:\n"
-        "<i>يمكنك الحصول على الآيدي عن طريق الأمر /id إذا كان المستخدم في مجموعة مع البوت</i>",
+        "أرسل <b>آيدي المستخدم</b> الذي تريد شحن رصيده:",
         parse_mode=ParseMode.HTML,
         reply_markup=ReplyKeyboardMarkup([["🔙 رجوع للوحة التحكم"]], resize_keyboard=True)
     )
@@ -1359,10 +1277,8 @@ async def handle_admin_action(update: Update, context: CallbackContext):
             target_user_id = context.user_data.get('charge_user_id')
             
             if target_user_id:
-                # شحن الرصيد
                 update_balance(target_user_id, amount, 'deposit')
                 
-                # إرسال إشعار للمستخدم
                 try:
                     await send_notification(
                         target_user_id,
@@ -1384,7 +1300,6 @@ async def handle_admin_action(update: Update, context: CallbackContext):
                     reply_markup=ReplyKeyboardMarkup([["🔙 رجوع للوحة التحكم"]], resize_keyboard=True)
                 )
                 
-                # مسح بيانات الإجراء
                 context.user_data.pop('admin_action', None)
                 context.user_data.pop('charge_user_id', None)
                 
@@ -1395,36 +1310,6 @@ async def handle_admin_action(update: Update, context: CallbackContext):
                 parse_mode=ParseMode.HTML
             )
             return ADMIN_STATE
-    
-    elif action == 'ban_user':
-        if text.isdigit():
-            target_user_id = int(text)
-            user = get_user(target_user_id)
-            
-            if user:
-                # حظر المستخدم
-                c = db_conn.cursor()
-                c.execute('''UPDATE users SET is_banned = 1 WHERE user_id = ?''', (target_user_id,))
-                db_conn.commit()
-                
-                await update.message.reply_text(
-                    f"✅ <b>تم حظر المستخدم بنجاح</b>\n\n"
-                    f"👤 الآيدي: {target_user_id}\n"
-                    f"👤 الاسم: {user.get('first_name', '')} {user.get('last_name', '')}\n"
-                    f"📛 اليوزر: @{user.get('username', 'لا يوجد')}",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=ReplyKeyboardMarkup([["🔙 رجوع للوحة التحكم"]], resize_keyboard=True)
-                )
-            else:
-                await update.message.reply_text(
-                    "❌ المستخدم غير موجود.",
-                    parse_mode=ParseMode.HTML
-                )
-        else:
-            await update.message.reply_text(
-                "❌ آيدي المستخدم يجب أن يكون رقماً.",
-                parse_mode=ParseMode.HTML
-            )
     
     return ConversationHandler.END
 
@@ -1635,7 +1520,6 @@ async def handle_settings_input(update: Update, context: CallbackContext):
             )
             return ADMIN_STATE
     
-    # مسح بيانات الإجراء
     context.user_data.pop('admin_action', None)
     return ConversationHandler.END
 
@@ -1712,7 +1596,6 @@ async def handle_broadcast(update: Update, context: CallbackContext):
         )
         return ConversationHandler.END
     
-    # تأكيد الإرسال
     confirm_keyboard = [
         ["✅ نعم، أرسل الإشعار", "❌ لا، إلغاء الإرسال"]
     ]
@@ -1739,14 +1622,12 @@ async def confirm_broadcast(update: Update, context: CallbackContext):
     if update.message.text == "✅ نعم، أرسل الإشعار":
         broadcast_text = context.user_data.get('broadcast_text', '')
         
-        # إرسال إشعار بدء الإرسال
         progress_msg = await update.message.reply_text(
             "📤 <b>جاري إرسال الإشعارات...</b>\n"
             "قد يستغرق ذلك بضع دقائق.",
             parse_mode=ParseMode.HTML
         )
         
-        # الحصول على جميع المستخدمين
         all_users = get_all_users()
         success_count = 0
         fail_count = 0
@@ -1756,10 +1637,7 @@ async def confirm_broadcast(update: Update, context: CallbackContext):
                 try:
                     await send_notification(user['user_id'], broadcast_text, context)
                     success_count += 1
-                    
-                    # تأخير بسيط لتجنب حظر تليجرام
                     await asyncio.sleep(0.1)
-                    
                 except Exception as e:
                     logger.error(f"خطأ في إرسال إشعار للمستخدم {user['user_id']}: {e}")
                     fail_count += 1
@@ -1777,7 +1655,6 @@ async def confirm_broadcast(update: Update, context: CallbackContext):
             reply_markup=ReplyKeyboardMarkup([["🔙 رجوع للوحة التحكم"]], resize_keyboard=True)
         )
         
-        # مسح بيانات البث
         context.user_data.pop('broadcast_text', None)
         context.user_data.pop('admin_action', None)
         
@@ -1797,7 +1674,6 @@ async def cancel_admin(update: Update, context: CallbackContext) -> int:
         reply_markup=ReplyKeyboardMarkup([["🔙 رجوع للوحة التحكم"]], resize_keyboard=True)
     )
     
-    # مسح جميع بيانات الإجراءات
     for key in list(context.user_data.keys()):
         if key.startswith('admin_') or key in ['charge_user_id', 'broadcast_text']:
             context.user_data.pop(key, None)
@@ -1840,7 +1716,7 @@ async def handle_message(update: Update, context: CallbackContext):
         await admin_stats(update, context)
     
     elif text == "👥 إدارة المستخدمين":
-        await admin_users(update, context)
+        await admin_panel(update, context)
     
     elif text == "💰 الشحن والرصيد":
         await admin_charge(update, context)
@@ -1870,7 +1746,6 @@ async def handle_message(update: Update, context: CallbackContext):
         )
     
     else:
-        # إذا كان المستخدم في لوحة التحكم ومعالجة إدخالات الإعدادات
         if context.user_data.get('admin_action'):
             if context.user_data.get('admin_action') == 'broadcast':
                 await handle_broadcast(update, context)
@@ -1901,10 +1776,8 @@ async def error_handler(update: Update, context: CallbackContext):
 # ========== الدالة الرئيسية ==========
 def main():
     """الدالة الرئيسية لتشغيل البوت"""
-    # إنشاء تطبيق البوت
     application = Application.builder().token(BOT_TOKEN).build()
     
-    # إضافة معالج المحادثة لحساب الإعفاء
     exemption_conv = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^📊 حساب درجة الإعفاء$"), exemption_start)],
         states={
@@ -1912,11 +1785,9 @@ def main():
             WAITING_FOR_COURSE2: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_course2)],
             WAITING_FOR_COURSE3: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_course3)],
         },
-        fallbacks=[CommandHandler("cancel", cancel_exemption),
-                  MessageHandler(filters.Regex("^(إلغاء|❌ إلغاء)$"), cancel_exemption)],
+        fallbacks=[MessageHandler(filters.Regex("^(إلغاء|❌ إلغاء)$"), cancel_exemption)],
     )
     
-    # إضافة معالج المحادثة لتلخيص PDF
     summarize_conv = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^📝 تلخيص الملازم$"), summarize_start)],
         states={
@@ -1925,11 +1796,9 @@ def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pdf)
             ],
         },
-        fallbacks=[CommandHandler("cancel", cancel_summarize),
-                  MessageHandler(filters.Regex("^(إلغاء|❌ إلغاء)$"), cancel_summarize)],
+        fallbacks=[MessageHandler(filters.Regex("^(إلغاء|❌ إلغاء)$"), cancel_summarize)],
     )
     
-    # إضافة معالج المحادثة لسؤال وجواب
     qa_conv = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^❓ سؤال وجواب$"), qa_start)],
         states={
@@ -1939,11 +1808,9 @@ def main():
                 MessageHandler(filters.Document.ALL, handle_question)
             ],
         },
-        fallbacks=[CommandHandler("cancel", cancel_qa),
-                  MessageHandler(filters.Regex("^(إلغاء|❌ إلغاء)$"), cancel_qa)],
+        fallbacks=[MessageHandler(filters.Regex("^(إلغاء|❌ إلغاء)$"), handle_question)],
     )
     
-    # إضافة معالج المحادثة للإدارة
     admin_conv = ConversationHandler(
         entry_points=[],
         states={
@@ -1954,7 +1821,6 @@ def main():
         fallbacks=[MessageHandler(filters.Regex("^(إلغاء|❌ إلغاء)$"), cancel_admin)],
     )
     
-    # إضافة جميع handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("balance", balance_command))
     application.add_handler(CommandHandler("referral", referral_command))
@@ -1965,13 +1831,9 @@ def main():
     application.add_handler(qa_conv)
     application.add_handler(admin_conv)
     
-    # إضافة معالج الرسائل العادية
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
-    # إضافة معالج الأخطاء
     application.add_error_handler(error_handler)
     
-    # بدء البوت
     logger.info("🤖 بوت 'يلا نتعلم' يعمل الآن...")
     print("=" * 50)
     print("🎓 بوت 'يلا نتعلم' يعمل بنجاح!")

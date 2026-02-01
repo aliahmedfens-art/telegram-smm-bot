@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 # ========== حالات المحادثة ==========
 WAITING_CODE, WAITING_SERVICE_QUANTITY, WAITING_FUNDING_MEMBERS, WAITING_FUNDING_CHANNEL, \
-WAITING_CHARGE_AMOUNT, WAITING_TRANSFER_USER, WAITING_TRANSFER_AMOUNT = range(7)
+WAITING_TRANSFER_USER, WAITING_TRANSFER_AMOUNT = range(6)
 
 # ========== قاعدة البيانات المحسنة ==========
 class EnhancedDatabase:
@@ -51,14 +51,12 @@ class EnhancedDatabase:
         self.data_dir = "data"
         self.data_files = {
             'users': f'{self.data_dir}/users.json',
-            'services': f'{self.data_dir}/services.json',
             'categories': f'{self.data_dir}/categories.json',
             'orders': f'{self.data_dir}/orders.json',
             'codes': f'{self.data_dir}/codes.json',
             'channels': f'{self.data_dir}/channels.json',
             'settings': f'{self.data_dir}/settings.json',
             'funding': f'{self.data_dir}/funding.json',
-            'subscriptions': f'{self.data_dir}/subscriptions.json',
             'admins': f'{self.data_dir}/admins.json',
             'buttons': f'{self.data_dir}/buttons.json',
             'transactions': f'{self.data_dir}/transactions.json'
@@ -81,14 +79,12 @@ class EnhancedDatabase:
         """تحميل جميع البيانات"""
         try:
             self.users = self.load_json('users')
-            self.services = self.load_json('services')
             self.categories = self.load_json('categories')
             self.orders = self.load_json('orders')
             self.codes = self.load_json('codes')
             self.channels = self.load_json('channels')
             self.settings = self.load_json('settings')
             self.funding = self.load_json('funding')
-            self.subscriptions = self.load_json('subscriptions')
             self.admins = self.load_json('admins')
             self.buttons = self.load_json('buttons')
             self.transactions = self.load_json('transactions')
@@ -144,11 +140,14 @@ class EnhancedDatabase:
             'min_withdraw': 1000,
             'max_withdraw': 10000,
             'welcome_message': 'أهلاً بك في بوت طاش للخدمات الإلكترونية\nكل عام وأنت بخير مستخدم طاش مميز',
-            'currency': 'كوكيز',
-            'currency_symbol': '🍪',
+            'currency': 'عنب',
+            'currency_symbol': '🍇',
             'completed_orders': 24105313,
             'min_transfer': 100,
-            'transfer_fee': 5  # نسبة عمولة التحويل
+            'transfer_fee': 5,  # نسبة عمولة التحويل
+            'transfer_active': True,  # تفعيل/تعطيل التحويل
+            'min_service_price': 10,
+            'max_service_price': 1000
         }
         
         # دمج الإعدادات الافتراضية مع الإعدادات الحالية
@@ -161,14 +160,12 @@ class EnhancedDatabase:
     def initialize_empty_data(self):
         """تهيئة بيانات فارغة"""
         self.users = {}
-        self.services = {}
-        self.categories = {}
+        self.categories = {}  # فارغ - سيتم إضافته من لوحة التحكم
         self.orders = {}
         self.codes = {}
         self.channels = {}
         self.settings = {}
         self.funding = {}
-        self.subscriptions = {}
         self.admins = {}
         self.buttons = {}
         self.transactions = {}
@@ -193,14 +190,12 @@ class EnhancedDatabase:
         """حفظ جميع البيانات"""
         try:
             self.save_json('users', self.users)
-            self.save_json('services', self.services)
             self.save_json('categories', self.categories)
             self.save_json('orders', self.orders)
             self.save_json('codes', self.codes)
             self.save_json('channels', self.channels)
             self.save_json('settings', self.settings)
             self.save_json('funding', self.funding)
-            self.save_json('subscriptions', self.subscriptions)
             self.save_json('admins', self.admins)
             self.save_json('buttons', self.buttons)
             self.save_json('transactions', self.transactions)
@@ -232,7 +227,6 @@ class EnhancedDatabase:
                 'funding_requests': [],
                 'pending_orders': [],
                 'completed_orders': [],
-                'subscriptions_done': [],
                 'transactions': [],
                 'completed_services': 0,
                 'total_earned': 0
@@ -373,8 +367,8 @@ def create_pdf_invoice(order_data: dict, user_data: dict) -> BytesIO:
     c.drawString(100, 650, format_arabic("تفاصيل الطلب:"))
     c.drawString(120, 630, format_arabic(f"الخدمة: {order_data.get('service_name', '')}"))
     c.drawString(120, 610, format_arabic(f"الكمية: {order_data.get('quantity', 0)}"))
-    c.drawString(120, 590, format_arabic(f"السعر: {order_data.get('price', 0)} {db.settings.get('currency', 'نقطة')}"))
-    c.drawString(120, 570, format_arabic(f"المجموع: {order_data.get('total', 0)} {db.settings.get('currency', 'نقطة')}"))
+    c.drawString(120, 590, format_arabic(f"السعر: {order_data.get('price', 0)} {db.settings.get('currency', 'عنب')}"))
+    c.drawString(120, 570, format_arabic(f"المجموع: {order_data.get('total', 0)} {db.settings.get('currency', 'عنب')}"))
     
     # رسالة شكر
     c.setFont("Helvetica-Bold", 14)
@@ -392,18 +386,18 @@ def get_main_keyboard(user_id: int):
             ["📊 لوحة التحكم", "👤 حسابي"],
             ["🌙 خدمات الرشق", "💬 خدمات الألعاب والتطبيقات"],
             ["🔵+ تمويل أعضاء حقيقيين متفاعلين", "🟢 استخدام الكود"],
-            ["🔴 تحويل الكوكيز", "🔵 معلومات الحساب"],
+            ["🔴 تحويل العنب", "🔵 معلومات الحساب"],
             ["🔵 قناة البوت", "🔵 فحص طلبي"],
-            ["🔵 شروط الاستخدام", "🔵 شحن الكوكيز"]
+            ["🔵 شروط الاستخدام", "🔵 شحن العنب"]
         ]
     else:
         buttons = [
             ["👤 حسابي", "🌙 خدمات الرشق"],
             ["💬 خدمات الألعاب والتطبيقات", "🔵+ تمويل أعضاء حقيقيين متفاعلين"],
-            ["🟢 استخدام الكود", "🔴 تحويل الكوكيز"],
+            ["🟢 استخدام الكود", "🔴 تحويل العنب"],
             ["🔵 معلومات الحساب", "🔵 قناة البوت"],
             ["🔵 فحص طلبي", "🔵 شروط الاستخدام"],
-            ["🔵 شحن الكوكيز"]
+            ["🔵 شحن العنب"]
         ]
     
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
@@ -475,7 +469,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         inviter_data['invited_users'].append(user_id)
                         db.update_user(inviter_id, inviter_data)
                         
-                        # منح النقاط للمدعو إذا كان النظام نشطاً
+                        # منح العنب للمدعو إذا كان النظام نشطاً
                         if db.settings.get('invite_active'):
                             reward = db.settings.get('invite_reward', 100)
                             new_points = inviter_data.get('points', 0) + reward
@@ -493,7 +487,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             try:
                                 await context.bot.send_message(
                                     inviter_id,
-                                    f"🎉 مبروك! حصلت على {reward} {db.settings.get('currency', 'نقطة')}\n"
+                                    f"🎉 مبروك! حصلت على {reward} {db.settings.get('currency_symbol', '🍇')}\n"
                                     f"المستخدم {user.first_name} انضم عبر رابط دعوتك!"
                                 )
                             except:
@@ -507,7 +501,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"👤 مستخدم جديد!\n"
             f"🆔: {user_id}\n"
             f"👤: {user.first_name}\n"
-            f"📊 النقاط: {user_data.get('points', 0)}\n"
+            f"📊 العنب: {user_data.get('points', 0)}\n"
             f"📅: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
             context
         )
@@ -517,14 +511,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "أهلاً بك في بوت فولو - Follow\nكل عام وأنت بخير مستخدم فولو مميز")
     
     user_points = user_data.get('points', 1498)
-    currency = db.settings.get('currency', 'كوكيز')
+    currency = db.settings.get('currency', 'عنب')
+    currency_symbol = db.settings.get('currency_symbol', '🍇')
     
     # بناء الرسالة الرئيسية
     main_message = f"""
 {welcome_message}
 
 🆔 إيدييك: {user_id}
-🍪 عدد {currency}: {user_points}
+{currency_symbol} عدد {currency}: {user_points}
 
 📊 إحصائيات البوت:
 عدد الطلبات المكتملة: {db.settings.get('completed_orders', 24105313):,}
@@ -582,8 +577,6 @@ async def handle_conversation_state(update: Update, context: ContextTypes.DEFAUL
         await handle_funding_members_input(update, context, text, state)
     elif state_type == 'waiting_funding_channel':
         await handle_funding_channel_input(update, context, text, state)
-    elif state_type == 'waiting_charge_amount':
-        await handle_charge_amount(update, context, text, state)
     elif state_type == 'waiting_transfer_user':
         await handle_transfer_user(update, context, text, state)
     elif state_type == 'waiting_transfer_amount':
@@ -605,8 +598,8 @@ async def handle_main_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
         await start_channel_funding(update, context)
     elif text == "🟢 استخدام الكود":
         await start_code_usage(update, context)
-    elif text == "🔴 تحويل الكوكيز":
-        await start_cookies_transfer(update, context)
+    elif text == "🔴 تحويل العنب":
+        await start_grape_transfer(update, context)
     elif text == "🔵 معلومات الحساب":
         await show_account_info(update, context)
     elif text == "🔵 قناة البوت":
@@ -615,8 +608,8 @@ async def handle_main_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
         await check_my_orders(update, context)
     elif text == "🔵 شروط الاستخدام":
         await show_terms(update, context)
-    elif text == "🔵 شحن الكوكيز":
-        await charge_cookies(update, context)
+    elif text == "🔵 شحن العنب":
+        await charge_grape(update, context)
     else:
         # البحث عن أزرار مخصصة
         for btn_id, btn_data in db.buttons.items():
@@ -638,11 +631,11 @@ async def show_user_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🆔 المعرف: <code>{user_id}</code>
 📛 الاسم: {user_data['first_name']}
 📅 تاريخ الانضمام: {user_data['join_date'][:10]}
-🍪 عدد {db.settings.get('currency', 'كوكيز')}: {user_data['points']}
+🍇 عدد {db.settings.get('currency', 'عنب')}: {user_data['points']}
 
 📊 <b>الإحصائيات:</b>
    📦 عدد الطلبات: {user_data['total_orders']}
-   💰 إجمالي المشتريات: {user_data['total_spent']} {db.settings.get('currency', 'كوكيز')}
+   💰 إجمالي المشتريات: {user_data['total_spent']} {db.settings.get('currency', 'عنب')}
    👥 عدد المدعوين: {len(user_data.get('invited_users', []))}
    ✅ خدمات مكتملة: {user_data.get('completed_services', 0)}
    
@@ -650,7 +643,7 @@ async def show_user_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 <code>https://t.me/{(await context.bot.get_me()).username}?start={user_id}</code>
 
 🎁 <b>مكافأة الدعوة:</b>
-   لكل صديق: {db.settings.get('invite_reward', 100)} {db.settings.get('currency', 'كوكيز')}
+   لكل صديق: {db.settings.get('invite_reward', 100)} {db.settings.get('currency', 'عنب')}
 """
     
     # إضافة معلومات المدير إذا كان
@@ -664,20 +657,26 @@ async def show_services_category(update: Update, context: ContextTypes.DEFAULT_T
     """عرض خدمات فئة معينة"""
     # البحث عن القسم المناسب
     category_id = None
+    category_data = None
+    
     for cat_id, category in db.categories.items():
-        if category.get('type') == category_type:
+        if category_type == "رشق" and "رشق" in category.get('name', ''):
             category_id = cat_id
+            category_data = category
+            break
+        elif category_type == "ألعاب" and ("ألعاب" in category.get('name', '') or "تطبيقات" in category.get('name', '')):
+            category_id = cat_id
+            category_data = category
             break
     
-    if not category_id:
-        await update.message.reply_text(f"⚠️ لا توجد خدمات في قسم {category_type} حالياً.")
+    if not category_data:
+        await update.message.reply_text(f"⚠️ لا توجد خدمات في قسم {category_type} حالياً.\nيمكن للمدير إضافة خدمات من لوحة التحكم.")
         return
     
-    category = db.categories[category_id]
-    services = category.get('services', {})
+    services = category_data.get('services', {})
     
     if not services:
-        await update.message.reply_text(f"⚠️ لا توجد خدمات متاحة في قسم {category_type}.")
+        await update.message.reply_text(f"⚠️ لا توجد خدمات متاحة في قسم {category_type}.\nيمكن للمدير إضافة خدمات من لوحة التحكم.")
         return
     
     # إنشاء لوحة المفاتيح للخدمات
@@ -685,7 +684,7 @@ async def show_services_category(update: Update, context: ContextTypes.DEFAULT_T
     for service_id, service in services.items():
         service_name = service.get('name', 'خدمة')
         service_price = service.get('price', 0)
-        button_text = f"{service_name} - {service_price} {db.settings.get('currency', 'كوكيز')}/1000"
+        button_text = f"{service_name} - {service_price} {db.settings.get('currency', 'عنب')}/1000"
         
         keyboard.append([InlineKeyboardButton(button_text, callback_data=f"service_{service_id}")])
     
@@ -693,8 +692,8 @@ async def show_services_category(update: Update, context: ContextTypes.DEFAULT_T
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
-        f"🛒 <b>خدمات {category['name']}</b>\n\n"
-        f"{category.get('description', 'اختر الخدمة المناسبة:')}",
+        f"🛒 <b>{category_data['name']}</b>\n\n"
+        f"{category_data.get('description', 'اختر الخدمة المناسبة:')}",
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
     )
@@ -709,12 +708,12 @@ async def start_channel_funding(update: Update, context: ContextTypes.DEFAULT_TY
 💸 <b>تمويل أعضاء حقيقيين متفاعلين</b>
 
 📊 <b>معلومات الخدمة:</b>
-   لكل عضو: {rate} {db.settings.get('currency', 'كوكيز')}
+   لكل عضو: {rate} {db.settings.get('currency', 'عنب')}
    الحد الأدنى: 10 أعضاء
    الحد الأقصى: 1000 عضو
    
 💰 <b>مثال:</b>
-   100 عضو = {100 * rate} {db.settings.get('currency', 'كوكيز')}
+   100 عضو = {100 * rate} {db.settings.get('currency', 'عنب')}
    
 📝 <b>شروط الخدمة:</b>
 1. يجب أن يكون البوت مشرفاً في القناة
@@ -756,8 +755,8 @@ async def handle_funding_members_input(update: Update, context: ContextTypes.DEF
         user_data = db.get_user(user_id)
         if user_data['points'] < total_cost:
             await update.message.reply_text(
-                f"❌ {db.settings.get('currency', 'كوكيز')} غير كافية!\n"
-                f"🍪 المطلوبة: {total_cost}\n"
+                f"❌ {db.settings.get('currency', 'عنب')} غير كافية!\n"
+                f"🍇 المطلوبة: {total_cost}\n"
                 f"💰 رصيدك الحالي: {user_data['points']}"
             )
             # مسح الحالة
@@ -773,7 +772,7 @@ async def handle_funding_members_input(update: Update, context: ContextTypes.DEF
         
         await update.message.reply_text(
             f"✅ تم تحديد {members_count} عضو\n"
-            f"💰 التكلفة الإجمالية: {total_cost} {db.settings.get('currency', 'كوكيز')}\n\n"
+            f"💰 التكلفة الإجمالية: {total_cost} {db.settings.get('currency', 'عنب')}\n\n"
             "📢 الآن أرسل رابط القناة (يجب أن يكون البوت مشرفاً فيها):"
         )
         
@@ -816,7 +815,7 @@ async def handle_funding_channel_input(update: Update, context: ContextTypes.DEF
                 )
                 return
             
-            # خصم النقاط
+            # خصم العنب
             user_data = db.get_user(user_id)
             total_cost = state['total_cost']
             
@@ -867,7 +866,7 @@ async def handle_funding_channel_input(update: Update, context: ContextTypes.DEF
                 f"👤 المستخدم: {user_data['first_name']} (ID: {user_id})\n"
                 f"📢 القناة: {chat.title}\n"
                 f"👥 العدد المطلوب: {state['members_count']}\n"
-                f"💰 التكلفة: {total_cost} {db.settings.get('currency', 'كوكيز')}\n"
+                f"💰 التكلفة: {total_cost} {db.settings.get('currency', 'عنب')}\n"
                 f"🆔 رقم الطلب: {funding_id}",
                 context
             )
@@ -878,7 +877,7 @@ async def handle_funding_channel_input(update: Update, context: ContextTypes.DEF
                 f"🆔 رقم الطلب: <code>{funding_id}</code>\n"
                 f"📢 القناة: {chat.title}\n"
                 f"👥 العدد المطلوب: {state['members_count']} عضو\n"
-                f"💰 التكلفة: {total_cost} {db.settings.get('currency', 'كوكيز')}\n\n"
+                f"💰 التكلفة: {total_cost} {db.settings.get('currency', 'عنب')}\n\n"
                 f"📊 سيبدأ تجميع الأعضاء تلقائياً.\n"
                 f"📨 ستستلم إشعاراً بكل عضو جديد.",
                 parse_mode=ParseMode.HTML
@@ -982,7 +981,7 @@ async def handle_code_input(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             f"🎫 <b>تم استخدام كود</b>\n\n"
             f"🆔 الكود: {code}\n"
             f"👤 المستخدم: {user_data['first_name']} (ID: {user_id})\n"
-            f"💰 القيمة: {points} {db.settings.get('currency', 'كوكيز')}\n"
+            f"💰 القيمة: {points} {db.settings.get('currency', 'عنب')}\n"
             f"📊 الاستخدامات: {used_count + 1}/{max_uses}",
             context
         )
@@ -990,8 +989,8 @@ async def handle_code_input(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         await update.message.reply_text(
             f"✅ <b>تم استخدام الكود بنجاح!</b>\n\n"
             f"🎫 الكود: {code}\n"
-            f"💰 القيمة: {points} {db.settings.get('currency', 'كوكيز')}\n"
-            f"🍪 رصيدك الجديد: {new_points}",
+            f"💰 القيمة: {points} {db.settings.get('currency', 'عنب')}\n"
+            f"🍇 رصيدك الجديد: {new_points}",
             parse_mode=ParseMode.HTML
         )
         
@@ -1001,19 +1000,24 @@ async def handle_code_input(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     else:
         await update.message.reply_text("❌ الكود غير صحيح أو غير موجود!")
 
-async def start_cookies_transfer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """بدء تحويل الكوكيز"""
+async def start_grape_transfer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """بدء تحويل العنب"""
     user_id = update.effective_user.id
     
+    # التحقق من تفعيل التحويل
+    if not db.settings.get('transfer_active', True):
+        await update.message.reply_text("❌ نظام تحويل العنب معطل حالياً.")
+        return
+    
     info_text = f"""
-🔴 <b>تحويل {db.settings.get('currency', 'كوكيز')}</b>
+🔴 <b>تحويل {db.settings.get('currency', 'عنب')}</b>
 
 📊 <b>معلومات التحويل:</b>
-   الحد الأدنى: {db.settings.get('min_transfer', 100)} {db.settings.get('currency', 'كوكيز')}
+   الحد الأدنى: {db.settings.get('min_transfer', 100)} {db.settings.get('currency', 'عنب')}
    عمولة التحويل: {db.settings.get('transfer_fee', 5)}%
    
 📝 <b>مثال:</b>
-   تحويل 1000 {db.settings.get('currency', 'كوكيز')}
+   تحويل 1000 {db.settings.get('currency', 'عنب')}
    العمولة: {1000 * db.settings.get('transfer_fee', 5) / 100}
    المستلم يحصل: {1000 - (1000 * db.settings.get('transfer_fee', 5) / 100)}
    
@@ -1067,7 +1071,7 @@ async def handle_transfer_user(update: Update, context: ContextTypes.DEFAULT_TYP
             f"✅ تم تحديد المستخدم:\n"
             f"👤 الاسم: {target_user.get('first_name', 'غير معروف')}\n"
             f"🆔 المعرف: {target_user_id}\n\n"
-            f"الآن أرسل عدد {db.settings.get('currency', 'كوكيز')} التي تريد تحويلها:"
+            f"الآن أرسل عدد {db.settings.get('currency', 'عنب')} التي تريد تحويلها:"
         )
         
     except ValueError:
@@ -1090,7 +1094,7 @@ async def handle_transfer_amount(update: Update, context: ContextTypes.DEFAULT_T
         if user_data['points'] < amount:
             await update.message.reply_text(
                 f"❌ رصيدك غير كافي!\n"
-                f"🍪 الرصيد الحالي: {user_data['points']}\n"
+                f"🍇 الرصيد الحالي: {user_data['points']}\n"
                 f"💰 المبلغ المطلوب: {amount}"
             )
             # مسح الحالة
@@ -1134,10 +1138,10 @@ async def handle_transfer_amount(update: Update, context: ContextTypes.DEFAULT_T
             f"✅ <b>تم التحويل بنجاح!</b>\n\n"
             f"👤 إلى: {state['target_name']}\n"
             f"🆔 المعرف: {target_user_id}\n"
-            f"💰 المبلغ: {amount} {db.settings.get('currency', 'كوكيز')}\n"
+            f"💰 المبلغ: {amount} {db.settings.get('currency', 'عنب')}\n"
             f"💸 العمولة: {fee_amount} ({fee_percentage}%)\n"
             f"🎯 المستلم حصل: {net_amount}\n"
-            f"🍪 رصيدك الجديد: {user_data['points'] - amount}",
+            f"🍇 رصيدك الجديد: {user_data['points'] - amount}",
             parse_mode=ParseMode.HTML
         )
         
@@ -1148,8 +1152,8 @@ async def handle_transfer_amount(update: Update, context: ContextTypes.DEFAULT_T
                 f"🎉 <b>استلمت تحويلاً!</b>\n\n"
                 f"👤 من: {user_data['first_name']}\n"
                 f"🆔 المعرف: {user_id}\n"
-                f"💰 المبلغ: {net_amount} {db.settings.get('currency', 'كوكيز')}\n"
-                f"🍪 رصيدك الجديد: {target_data['points'] + net_amount}",
+                f"💰 المبلغ: {net_amount} {db.settings.get('currency', 'عنب')}\n"
+                f"🍇 رصيدك الجديد: {target_data['points'] + net_amount}",
                 parse_mode=ParseMode.HTML
             )
         except:
@@ -1157,10 +1161,10 @@ async def handle_transfer_amount(update: Update, context: ContextTypes.DEFAULT_T
         
         # إشعار المدير
         await notify_admins(
-            f"🔴 <b>تحويل {db.settings.get('currency', 'كوكيز')}</b>\n\n"
+            f"🔴 <b>تحويل {db.settings.get('currency', 'عنب')}</b>\n\n"
             f"👤 المرسل: {user_data['first_name']} (ID: {user_id})\n"
             f"👥 المستلم: {state['target_name']} (ID: {target_user_id})\n"
-            f"💰 المبلغ: {amount} {db.settings.get('currency', 'كوكيز')}\n"
+            f"💰 المبلغ: {amount} {db.settings.get('currency', 'عنب')}\n"
             f"💸 العمولة: {fee_amount}\n"
             f"🎯 الصافي: {net_amount}",
             context
@@ -1188,7 +1192,7 @@ async def show_account_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ⏰ آخر نشاط: {user_data['last_active'][:19]}
 
 💰 <b>المالية:</b>
-🍪 {db.settings.get('currency', 'كوكيز')}: {user_data['points']}
+🍇 {db.settings.get('currency', 'عنب')}: {user_data['points']}
 📦 طلبات مكتملة: {user_data.get('completed_services', 0)}
 💸 إجمالي الصرف: {user_data.get('total_spent', 0)}
 
@@ -1244,7 +1248,7 @@ async def check_my_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 orders_text += f"   📌 {order.get('service_name', 'خدمة')}\n"
                 orders_text += f"   🆔: <code>{order_id}</code>\n"
                 orders_text += f"   📅: {order.get('date', '')[:10]}\n"
-                orders_text += f"   💰: {order.get('total_price', 0)} {db.settings.get('currency', 'كوكيز')}\n"
+                orders_text += f"   💰: {order.get('total_price', 0)} {db.settings.get('currency', 'عنب')}\n"
                 orders_text += f"   🔄: {order.get('status', 'معلق')}\n\n"
     
     if completed_orders:
@@ -1255,7 +1259,7 @@ async def check_my_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 orders_text += f"   ✓ {order.get('service_name', 'خدمة')}\n"
                 orders_text += f"   🆔: <code>{order_id}</code>\n"
                 orders_text += f"   📅: {order.get('date', '')[:10]}\n"
-                orders_text += f"   💰: {order.get('total_price', 0)} {db.settings.get('currency', 'كوكيز')}\n\n"
+                orders_text += f"   💰: {order.get('total_price', 0)} {db.settings.get('currency', 'عنب')}\n\n"
     
     # زر لتفاصيل أكثر
     keyboard = [[InlineKeyboardButton("📋 عرض جميع الطلبات", callback_data="show_all_orders")]]
@@ -1265,7 +1269,7 @@ async def check_my_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def show_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """عرض شروط الاستخدام"""
-    terms_text = """
+    terms_text = f"""
 🔵 <b>شروط الاستخدام</b>
 
 📜 <b>الشروط والأحكام:</b>
@@ -1282,7 +1286,7 @@ async def show_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 3. <b>المدفوعات:</b>
    • جميع المدفوعات غير قابلة للاسترداد
-   • يتم خصم النقاط فور تأكيد الطلب
+   • يتم خصم {db.settings.get('currency', 'عنب')} فور تأكيد الطلب
    • أي خطأ في الطلب يتحمله المستخدم
 
 4. <b>الحساب:</b>
@@ -1296,16 +1300,16 @@ async def show_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
    • أي نزاع يتم حله وفقاً للقوانين المحلية
 
 📞 <b>للشكاوى والاقتراحات:</b>
-{}
+{db.settings.get('support_user', '@support')}
 
 ⚠️ <b>ملاحظة:</b>
 باستخدامك للبوت فإنك توافق على جميع الشروط والأحكام المذكورة أعلاه.
-""".format(db.settings.get('support_user', '@support'))
+"""
     
     await update.message.reply_text(terms_text, parse_mode=ParseMode.HTML)
 
-async def charge_cookies(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """شحن الكوكيز"""
+async def charge_grape(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """شحن العنب"""
     keyboard = [
         [InlineKeyboardButton("🎫 استخدام كود شحن", callback_data="use_code_charge")],
         [InlineKeyboardButton("💳 شحن عن طريق الدعم", callback_data="charge_via_support")],
@@ -1315,12 +1319,12 @@ async def charge_cookies(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
-        f"🔵 <b>شحن {db.settings.get('currency', 'كوكيز')}</b>\n\n"
+        f"🔵 <b>شحن {db.settings.get('currency', 'عنب')}</b>\n\n"
         f"اختر طريقة الشحن المناسبة:\n\n"
         f"1. 🎫 <b>كود شحن:</b> أدخل كود شحن صالح\n"
         f"2. 💳 <b>شحن عن طريق الدعم:</b> للطرق المتاحة\n"
         f"3. 👑 <b>طلب من المدير:</b> لشحن كميات كبيرة\n\n"
-        f"💰 <b>الحد الأدنى للشحن:</b> 1000 {db.settings.get('currency', 'كوكيز')}\n"
+        f"💰 <b>الحد الأدنى للشحن:</b> 1000 {db.settings.get('currency', 'عنب')}\n"
         f"📞 <b>للاستفسارات:</b> {db.settings.get('support_user', '@support')}",
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
@@ -1367,6 +1371,20 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await start_code_usage(update, context)
     elif data == "show_all_orders":
         await show_all_orders(query, context)
+    elif data.startswith("confirm_order_"):
+        parts = data.split("_")
+        if len(parts) == 4:
+            service_id = parts[2]
+            quantity = int(parts[3])
+            await confirm_order(query, context, service_id, quantity)
+    elif data == "cancel_order":
+        await cancel_order(query, context)
+    elif data == "charge_via_support":
+        await charge_via_support(query, context)
+    elif data == "request_admin_charge":
+        await request_admin_charge(query, context)
+    elif data.startswith("admin_"):
+        await handle_admin_callback(query, context, data)
 
 async def check_subscription_callback(query, context):
     """فحص الاشتراك"""
@@ -1413,14 +1431,14 @@ async def handle_service_selection(query, context, service_id):
 
 📦 الخدمة: {service_data['name']}
 📂 القسم: {category_name}
-💰 السعر: {service_data['price']} {db.settings.get('currency', 'كوكيز')} لكل 1000
+💰 السعر: {service_data['price']} {db.settings.get('currency', 'عنب')} لكل 1000
 ⚡ السرعة: {service_data.get('speed', 'متوسطة')}
 ⏰ الوقت: {service_data.get('time', '24 ساعة')}
 📊 الحد الأدنى: {service_data.get('min', 100):,}
 📈 الحد الأقصى: {service_data.get('max', 10000):,}
 📝 الوصف: {service_data.get('description', 'لا يوجد وصف')}
 
-💎 <b>رصيدك:</b> {db.get_user(user_id)['points']:,} {db.settings.get('currency', 'كوكيز')}
+💎 <b>رصيدك:</b> {db.get_user(user_id)['points']:,} {db.settings.get('currency', 'عنب')}
 
 📝 <b>لطلب الخدمة:</b>
 أرسل الكمية المطلوبة (بين {service_data.get('min', 100):,} و {service_data.get('max', 10000):,})
@@ -1466,7 +1484,7 @@ async def handle_service_quantity(update: Update, context: ContextTypes.DEFAULT_
         if user_data['points'] < total_price:
             await update.message.reply_text(
                 f"❌ رصيدك غير كافي!\n"
-                f"🍪 المطلوب: {total_price}\n"
+                f"🍇 المطلوب: {total_price}\n"
                 f"💰 رصيدك: {user_data['points']}"
             )
             return
@@ -1485,7 +1503,7 @@ async def handle_service_quantity(update: Update, context: ContextTypes.DEFAULT_
             f"📝 الخدمة: {state['service_name']}\n"
             f"🎯 الكمية: {quantity:,}\n"
             f"💰 السعر: {price_per_1000} لكل 1000\n"
-            f"💸 الإجمالي: {total_price} {db.settings.get('currency', 'كوكيز')}\n\n"
+            f"💸 الإجمالي: {total_price} {db.settings.get('currency', 'عنب')}\n\n"
             f"هل تريد تأكيد الطلب؟",
             reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
@@ -1493,6 +1511,169 @@ async def handle_service_quantity(update: Update, context: ContextTypes.DEFAULT_
         
     except ValueError:
         await update.message.reply_text("❌ رجاءً أرسل رقم صحيح!")
+
+async def confirm_order(query, context, service_id, quantity):
+    """تأكيد الطلب"""
+    user_id = query.from_user.id
+    
+    # البحث عن بيانات الخدمة
+    service_data = None
+    category_name = ""
+    category_id = ""
+    
+    for cat_id, category in db.categories.items():
+        if service_id in category.get('services', {}):
+            service_data = category['services'][service_id]
+            category_name = category['name']
+            category_id = cat_id
+            break
+    
+    if not service_data:
+        await query.answer("❌ الخدمة غير موجودة!", show_alert=True)
+        return
+    
+    # حساب السعر
+    price_per_1000 = service_data.get('price', 0)
+    total_price = int((quantity / 1000) * price_per_1000)
+    
+    # التحقق من رصيد المستخدم
+    user_data = db.get_user(user_id)
+    if user_data['points'] < total_price:
+        await query.answer("❌ رصيدك غير كافي!", show_alert=True)
+        return
+    
+    # خصم المبلغ
+    new_points = user_data['points'] - total_price
+    db.update_user(user_id, {
+        'points': new_points,
+        'total_spent': user_data.get('total_spent', 0) + total_price,
+        'total_orders': user_data.get('total_orders', 0) + 1
+    })
+    
+    # إنشاء الطلب
+    order_id = f"ORD{datetime.now().strftime('%Y%m%d%H%M%S')}{random.randint(1000, 9999)}"
+    order_data = {
+        'id': order_id,
+        'user_id': user_id,
+        'service_id': service_id,
+        'service_name': service_data['name'],
+        'category_id': category_id,
+        'category_name': category_name,
+        'quantity': quantity,
+        'price_per_1000': price_per_1000,
+        'total_price': total_price,
+        'status': 'pending',
+        'date': datetime.now().isoformat(),
+        'notes': ''
+    }
+    
+    db.orders[order_id] = order_data
+    db.save_json('orders', db.orders)
+    
+    # تحديث بيانات المستخدم
+    user_data = db.get_user(user_id)
+    if 'pending_orders' not in user_data:
+        user_data['pending_orders'] = []
+    user_data['pending_orders'].append(order_id)
+    db.update_user(user_id, user_data)
+    
+    # إضافة معاملة
+    db.add_transaction(
+        user_id,
+        'service_order',
+        -total_price,
+        f"طلب خدمة {service_data['name']} - {quantity} كمية"
+    )
+    
+    # إشعار المدير
+    await notify_admins(
+        f"📦 <b>طلب خدمة جديد</b>\n\n"
+        f"👤 المستخدم: {user_data['first_name']} (ID: {user_id})\n"
+        f"📝 الخدمة: {service_data['name']}\n"
+        f"🎯 الكمية: {quantity:,}\n"
+        f"💰 السعر: {total_price} {db.settings.get('currency', 'عنب')}\n"
+        f"🆔 رقم الطلب: {order_id}\n\n"
+        f"📊 رصيد المستخدم بعد الخصم: {new_points}",
+        context
+    )
+    
+    # تأكيد للمستخدم
+    await query.edit_message_text(
+        f"✅ <b>تم تأكيد طلبك بنجاح!</b>\n\n"
+        f"📦 الخدمة: {service_data['name']}\n"
+        f"🎯 الكمية: {quantity:,}\n"
+        f"💰 المبلغ: {total_price} {db.settings.get('currency', 'عنب')}\n"
+        f"🆔 رقم الطلب: <code>{order_id}</code>\n"
+        f"📊 رصيدك الجديد: {new_points} {db.settings.get('currency', 'عنب')}\n\n"
+        f"📨 تم إرسال طلبك للإدارة وسيتم معالجته قريباً.",
+        parse_mode=ParseMode.HTML
+    )
+    
+    # مسح الحالة
+    if user_id in context.user_data.get('user_state', {}):
+        del context.user_data['user_state'][user_id]
+
+async def cancel_order(query, context):
+    """إلغاء الطلب"""
+    user_id = query.from_user.id
+    
+    await query.edit_message_text(
+        "❌ تم إلغاء الطلب.\n"
+        "يمكنك البدء من جديد."
+    )
+    
+    # مسح الحالة
+    if user_id in context.user_data.get('user_state', {}):
+        del context.user_data['user_state'][user_id]
+
+async def charge_via_support(query, context):
+    """شحن عن طريق الدعم"""
+    support_user = db.settings.get('support_user', '@support')
+    
+    await query.edit_message_text(
+        f"💳 <b>شحن عن طريق الدعم</b>\n\n"
+        f"📞 للشحن عن طريق الدعم:\n"
+        f"1. تواصل مع {support_user}\n"
+        f"2. اختر طريقة الدفع المناسبة\n"
+        f"3. أرسل إيصال الدفع\n"
+        f"4. سيتم شحن رصيدك خلال 24 ساعة\n\n"
+        f"💰 <b>طرق الدفع المتاحة:</b>\n"
+        f"• باي بال\n"
+        f"• حوالة بنكية\n"
+        f"• كروت شحن\n"
+        f"• محافظ إلكترونية\n\n"
+        f"📊 <b>الحد الأدنى:</b> 1000 {db.settings.get('currency', 'عنب')}",
+        parse_mode=ParseMode.HTML
+    )
+
+async def request_admin_charge(query, context):
+    """طلب شحن من المدير"""
+    user_id = query.from_user.id
+    user_data = db.get_user(user_id)
+    
+    await query.edit_message_text(
+        f"👑 <b>طلب شحن من المدير</b>\n\n"
+        f"📨 تم إرسال طلبك للمديرين.\n"
+        f"سيتم الرد عليك خلال 24 ساعة.\n\n"
+        f"📝 <b>تفاصيل طلبك:</b>\n"
+        f"👤 المستخدم: {user_data['first_name']}\n"
+        f"🆔 المعرف: {user_id}\n"
+        f"💰 الرصيد الحالي: {user_data['points']} {db.settings.get('currency', 'عنب')}\n\n"
+        f"📞 <b>ملاحظة:</b>\n"
+        f"سيقوم المدير بالتواصل معك لتحديد المبلغ وطريقة الدفع.",
+        parse_mode=ParseMode.HTML
+    )
+    
+    # إشعار المدير
+    await notify_admins(
+        f"💳 <b>طلب شحن من مستخدم</b>\n\n"
+        f"👤 المستخدم: {user_data['first_name']} (ID: {user_id})\n"
+        f"👤 اليوزر: @{user_data.get('username', 'غير متوفر')}\n"
+        f"💰 الرصيد الحالي: {user_data['points']} {db.settings.get('currency', 'عنب')}\n"
+        f"📅 تاريخ الانضمام: {user_data['join_date'][:10]}\n\n"
+        f"📨 يرجى التواصل معه لمعالجة طلب الشحن.",
+        context
+    )
 
 async def show_all_orders(query, context):
     """عرض جميع الطلبات"""
@@ -1517,7 +1698,7 @@ async def show_all_orders(query, context):
             orders_text += f"{status_icon} <b>{order.get('service_name', 'خدمة')}</b>\n"
             orders_text += f"   🆔: <code>{order_id}</code>\n"
             orders_text += f"   📅: {order.get('date', '')[:10]}\n"
-            orders_text += f"   💰: {order.get('total_price', 0)} {db.settings.get('currency', 'كوكيز')}\n"
+            orders_text += f"   💰: {order.get('total_price', 0)} {db.settings.get('currency', 'عنب')}\n"
             orders_text += f"   🔄: {order.get('status', 'غير معروف')}\n\n"
     
     await query.edit_message_text(orders_text, parse_mode=ParseMode.HTML)
@@ -1533,13 +1714,15 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [
         [InlineKeyboardButton("📊 الإحصائيات", callback_data="admin_stats")],
-        [InlineKeyboardButton("👥 المستخدمين", callback_data="admin_users")],
-        [InlineKeyboardButton("🛒 الخدمات", callback_data="admin_services")],
-        [InlineKeyboardButton("🎫 أكواد الشحن", callback_data="admin_codes")],
-        [InlineKeyboardButton("📢 القنوات", callback_data="admin_channels")],
-        [InlineKeyboardButton("💸 التمويلات", callback_data="admin_funding")],
-        [InlineKeyboardButton("⚙️ الإعدادات", callback_data="admin_settings")],
+        [InlineKeyboardButton("👥 إدارة المستخدمين", callback_data="admin_users")],
+        [InlineKeyboardButton("📂 إدارة الأقسام", callback_data="admin_categories")],
+        [InlineKeyboardButton("🛒 إدارة الخدمات", callback_data="admin_services")],
+        [InlineKeyboardButton("🎫 إدارة الأكواد", callback_data="admin_codes")],
+        [InlineKeyboardButton("📢 إدارة القنوات", callback_data="admin_channels")],
+        [InlineKeyboardButton("💸 إدارة التمويلات", callback_data="admin_funding")],
+        [InlineKeyboardButton("🔧 الإعدادات العامة", callback_data="admin_settings")],
         [InlineKeyboardButton("📨 الإذاعة", callback_data="admin_broadcast")],
+        [InlineKeyboardButton("👑 إدارة المديرين", callback_data="admin_admins")],
         [InlineKeyboardButton("🔙 رجوع", callback_data="back_to_main")]
     ]
     
@@ -1551,6 +1734,328 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
     )
+
+async def handle_admin_callback(query, context, data):
+    """معالجة استدعاءات لوحة التحكم"""
+    user_id = query.from_user.id
+    
+    if not db.is_admin(user_id):
+        await query.answer("❌ هذا القسم للمديرين فقط!", show_alert=True)
+        return
+    
+    if data == "admin_stats":
+        await admin_stats_panel(query, context)
+    elif data == "admin_users":
+        await admin_users_panel(query, context)
+    elif data == "admin_categories":
+        await admin_categories_panel(query, context)
+    elif data == "admin_services":
+        await admin_services_panel(query, context)
+    elif data == "admin_codes":
+        await admin_codes_panel(query, context)
+    elif data == "admin_channels":
+        await admin_channels_panel(query, context)
+    elif data == "admin_funding":
+        await admin_funding_panel(query, context)
+    elif data == "admin_settings":
+        await admin_settings_panel(query, context)
+    elif data == "admin_broadcast":
+        await admin_broadcast_panel(query, context)
+    elif data == "admin_admins":
+        await admin_admins_panel(query, context)
+
+async def admin_stats_panel(query, context):
+    """إحصائيات البوت"""
+    total_users = len(db.users)
+    active_today = len([u for u in db.users.values() 
+                       if datetime.fromisoformat(u.get('last_active', '2000-01-01')).date() == datetime.now().date()])
+    total_points = sum(u['points'] for u in db.users.values())
+    total_orders = sum(u['total_orders'] for u in db.users.values())
+    total_spent = sum(u['total_spent'] for u in db.users.values())
+    
+    # المستخدمين النشطين هذا الأسبوع
+    week_ago = datetime.now() - timedelta(days=7)
+    active_week = len([u for u in db.users.values() 
+                      if datetime.fromisoformat(u.get('last_active', '2000-01-01')) >= week_ago])
+    
+    # الطلبات اليومية
+    today_orders = 0
+    for order in db.orders.values():
+        if datetime.fromisoformat(order['date']).date() == datetime.now().date():
+            today_orders += 1
+    
+    text = f"""
+📊 <b>إحصائيات البوت</b>
+
+👥 <b>المستخدمين:</b>
+   إجمالي المستخدمين: {total_users}
+   النشطين اليوم: {active_today}
+   النشطين هذا الأسبوع: {active_week}
+
+💰 <b>المالية:</b>
+   إجمالي {db.settings.get('currency', 'عنب')}: {total_points:,}
+   إجمالي الصرف: {total_spent:,} {db.settings.get('currency', 'عنب')}
+
+📦 <b>الطلبات:</b>
+   إجمالي الطلبات: {total_orders}
+   طلبات اليوم: {today_orders}
+
+🛒 <b>الخدمات:</b>
+   الأقسام: {len(db.categories)}
+   الخدمات: {sum(len(cat.get('services', {})) for cat in db.categories.values())}
+
+💸 <b>التمويلات:</b>
+   النشطة: {len([f for f in db.funding.values() if f['status'] == 'active'])}
+   المكتملة: {len([f for f in db.funding.values() if f['status'] == 'completed'])}
+"""
+    
+    keyboard = [
+        [InlineKeyboardButton("🔄 تحديث", callback_data="admin_stats")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_back")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+async def admin_users_panel(query, context):
+    """إدارة المستخدمين"""
+    keyboard = [
+        [InlineKeyboardButton("🔍 بحث عن مستخدم", callback_data="admin_search_user")],
+        [InlineKeyboardButton("📋 قائمة المستخدمين", callback_data="admin_list_users")],
+        [InlineKeyboardButton("🚫 حظر مستخدم", callback_data="admin_ban_user")],
+        [InlineKeyboardButton("✅ فك حظر مستخدم", callback_data="admin_unban_user")],
+        [InlineKeyboardButton("💰 شحن رصيد مستخدم", callback_data="admin_charge_user")],
+        [InlineKeyboardButton("📨 إرسال رسالة", callback_data="admin_message_user")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_back")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        "👥 <b>إدارة المستخدمين</b>\n\n"
+        "اختر الإجراء المناسب:",
+        reply_markup=reply_markup,
+        parse_mode=ParseMode.HTML
+    )
+
+async def admin_categories_panel(query, context):
+    """إدارة الأقسام"""
+    total_categories = len(db.categories)
+    
+    keyboard = [
+        [InlineKeyboardButton("➕ إضافة قسم جديد", callback_data="admin_add_category")],
+        [InlineKeyboardButton("✏️ تعديل قسم", callback_data="admin_edit_category")],
+        [InlineKeyboardButton("🗑️ حذف قسم", callback_data="admin_delete_category")],
+        [InlineKeyboardButton("📋 قائمة الأقسام", callback_data="admin_list_categories")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_back")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = f"""
+📂 <b>إدارة الأقسام</b>
+
+📊 <b>الإحصائيات:</b>
+   عدد الأقسام: {total_categories}
+   
+📝 <b>ملاحظات:</b>
+   • يمكن إضافة أقسام جديدة
+   • كل قسم يمكن أن يحتوي على خدمات متعددة
+   • يجب حذف جميع الخدمات قبل حذف القسم
+"""
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+async def admin_services_panel(query, context):
+    """إدارة الخدمات"""
+    total_services = sum(len(cat.get('services', {})) for cat in db.categories.values())
+    
+    keyboard = [
+        [InlineKeyboardButton("➕ إضافة خدمة", callback_data="admin_add_service")],
+        [InlineKeyboardButton("✏️ تعديل خدمة", callback_data="admin_edit_service")],
+        [InlineKeyboardButton("🗑️ حذف خدمة", callback_data="admin_delete_service")],
+        [InlineKeyboardButton("📋 قائمة الخدمات", callback_data="admin_list_services")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_back")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = f"""
+🛒 <b>إدارة الخدمات</b>
+
+📊 <b>الإحصائيات:</b>
+   عدد الخدمات: {total_services}
+   
+📝 <b>ملاحظات:</b>
+   • يمكن إضافة خدمات جديدة
+   • كل خدمة مرتبطة بقسم معين
+   • يجب تحديد السعر لكل 1000
+"""
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+async def admin_codes_panel(query, context):
+    """إدارة أكواد الشحن"""
+    total_codes = len(db.codes)
+    active_codes = len([c for c in db.codes.values() 
+                       if datetime.fromisoformat(c.get('expiry_date', '2000-01-01')) > datetime.now()])
+    used_codes = len([c for c in db.codes.values() if c.get('used_count', 0) > 0])
+    total_points = sum(c.get('points', 0) for c in db.codes.values())
+    
+    keyboard = [
+        [InlineKeyboardButton("🎫 إنشاء كود جديد", callback_data="admin_create_code")],
+        [InlineKeyboardButton("📋 قائمة الأكواد", callback_data="admin_list_codes")],
+        [InlineKeyboardButton("🗑️ حذف كود", callback_data="admin_delete_code")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_back")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = f"""
+🎫 <b>إدارة أكواد الشحن</b>
+
+📊 <b>الإحصائيات:</b>
+   إجمالي الأكواد: {total_codes}
+   الأكواد النشطة: {active_codes}
+   الأكواد المستخدمة: {used_codes}
+   إجمالي {db.settings.get('currency', 'عنب')}: {total_points:,}
+"""
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+async def admin_channels_panel(query, context):
+    """إدارة القنوات"""
+    total_channels = len(db.channels)
+    
+    keyboard = [
+        [InlineKeyboardButton("➕ إضافة قناة", callback_data="admin_add_channel")],
+        [InlineKeyboardButton("🗑️ حذف قناة", callback_data="admin_delete_channel")],
+        [InlineKeyboardButton("📋 قائمة القنوات", callback_data="admin_list_channels")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_back")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = f"""
+📢 <b>إدارة القنوات</b>
+
+📊 <b>الإحصائيات:</b>
+   عدد القنوات: {total_channels}
+   
+📝 <b>ملاحظات:</b>
+   • القنوات المضافة تكون إجبارية للمستخدمين
+   • يجب أن يكون البوت مشرفاً في القناة
+   • يمكن إضافة قنوات متعددة
+"""
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+async def admin_funding_panel(query, context):
+    """إدارة التمويلات"""
+    active_funding = len([f for f in db.funding.values() if f['status'] == 'active'])
+    completed_funding = len([f for f in db.funding.values() if f['status'] == 'completed'])
+    
+    keyboard = [
+        [InlineKeyboardButton("📋 التمويلات النشطة", callback_data="admin_active_funding")],
+        [InlineKeyboardButton("✅ التمويلات المكتملة", callback_data="admin_completed_funding")],
+        [InlineKeyboardButton("❌ إلغاء تمويل", callback_data="admin_cancel_funding")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_back")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = f"""
+💸 <b>إدارة التمويلات</b>
+
+📊 <b>الإحصائيات:</b>
+   النشطة: {active_funding}
+   المكتملة: {completed_funding}
+   
+💰 <b>سعر التمويل الحالي:</b>
+   {db.settings.get('channel_funding_rate', 5)} {db.settings.get('currency', 'عنب')} لكل عضو
+"""
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+async def admin_settings_panel(query, context):
+    """الإعدادات العامة"""
+    keyboard = [
+        [InlineKeyboardButton("🎁 إعدادات الهدايا", callback_data="admin_gift_settings")],
+        [InlineKeyboardButton("👥 إعدادات الدعوة", callback_data="admin_invite_settings")],
+        [InlineKeyboardButton("💸 سعر التمويل", callback_data="admin_funding_price")],
+        [InlineKeyboardButton("🔴 إعدادات التحويل", callback_data="admin_transfer_settings")],
+        [InlineKeyboardButton("📞 بيانات التواصل", callback_data="admin_contact_info")],
+        [InlineKeyboardButton("💬 رسالة الترحيب", callback_data="admin_welcome_msg")],
+        [InlineKeyboardButton("🔔 الإشعارات", callback_data="admin_notifications")],
+        [InlineKeyboardButton("🔧 الصيانة", callback_data="admin_maintenance")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_back")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = f"""
+⚙️ <b>الإعدادات العامة</b>
+
+📝 <b>الإعدادات الحالية:</b>
+   • {db.settings.get('currency', 'عنب')} اليومية: {db.settings.get('daily_reward', 50)}
+   • مكافأة الدعوة: {db.settings.get('invite_reward', 100)}
+   • سعر التمويل: {db.settings.get('channel_funding_rate', 5)} {db.settings.get('currency', 'عنب')}/عضو
+   • عمولة التحويل: {db.settings.get('transfer_fee', 5)}%
+   • التحويل: {"✅ مفعل" if db.settings.get('transfer_active', True) else "❌ معطل"}
+   • الإشعارات: {"✅ مفعلة" if db.settings.get('notifications', True) else "❌ معطلة"}
+   • الصيانة: {"✅ مفعلة" if db.settings.get('maintenance', False) else "❌ معطلة"}
+"""
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+async def admin_broadcast_panel(query, context):
+    """الإذاعة للمستخدمين"""
+    total_users = len(db.users)
+    
+    keyboard = [
+        [InlineKeyboardButton("📨 إذاعة نصية", callback_data="admin_text_broadcast")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_back")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = f"""
+📨 <b>نظام الإذاعة</b>
+
+📊 <b>الإحصائيات:</b>
+   إجمالي المستخدمين: {total_users}
+   
+💡 <b>ملاحظات:</b>
+   • يمكن إرسال رسالة لجميع المستخدمين
+   • يجب الانتباه لعدم إرسال رسائل كثيرة
+"""
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+async def admin_admins_panel(query, context):
+    """إدارة المديرين"""
+    total_admins = len(db.admins)
+    level_1 = len([a for a in db.admins.values() if a['level'] == 1])
+    level_2 = len([a for a in db.admins.values() if a['level'] == 2])
+    level_3 = len([a for a in db.admins.values() if a['level'] == 3])
+    
+    keyboard = [
+        [InlineKeyboardButton("👑 رفع مدير", callback_data="admin_promote_admin")],
+        [InlineKeyboardButton("📋 قائمة المديرين", callback_data="admin_list_admins")],
+        [InlineKeyboardButton("⬇️ خفض صلاحية", callback_data="admin_demote_admin")],
+        [InlineKeyboardButton("🗑️ حذف مدير", callback_data="admin_remove_admin")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_back")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = f"""
+👑 <b>إدارة المديرين</b>
+
+📊 <b>الإحصائيات:</b>
+   إجمالي المديرين: {total_admins}
+   المستوى 1: {level_1}
+   المستوى 2: {level_2}
+   المستوى 3: {level_3}
+   
+📝 <b>مستويات الصلاحيات:</b>
+   • المستوى 1: صلاحيات أساسية
+   • المستوى 2: صلاحيات متوسطة
+   • المستوى 3: صلاحيات كاملة
+"""
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
 
 # ========== الدالة الرئيسية ==========
 async def backup_data(context: ContextTypes.DEFAULT_TYPE):
@@ -1579,7 +2084,6 @@ def main():
             WAITING_SERVICE_QUANTITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_service_quantity)],
             WAITING_FUNDING_MEMBERS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_funding_members_input)],
             WAITING_FUNDING_CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_funding_channel_input)],
-            WAITING_CHARGE_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_charge_amount)],
             WAITING_TRANSFER_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_transfer_user)],
             WAITING_TRANSFER_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_transfer_amount)],
         },
@@ -1598,6 +2102,7 @@ def main():
     print(f"🤖 يوزر البوت: {BOT_USERNAME}")
     print(f"👑 المدير الرئيسي: {ADMIN_ID}")
     print(f"👥 عدد المستخدمين: {len(db.users)}")
+    print(f"🍇 عملة البوت: {db.settings.get('currency', 'عنب')}")
     print(f"💾 مجلد البيانات: {db.data_dir}")
     print("=" * 50)
     
@@ -1605,59 +2110,6 @@ def main():
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
-    # إنشاء بعض البيانات الأولية للاختبار
-    if not db.categories:
-        # قسم خدمات الرشق
-        db.categories['cat1'] = {
-            'id': 'cat1',
-            'name': 'خدمات الرشق 🌙',
-            'type': 'رشق',
-            'description': 'خدمات الرشق للمنصات الاجتماعية',
-            'services': {
-                'srv1': {
-                    'id': 'srv1',
-                    'name': 'مشاهدات يوتيوب',
-                    'price': 50,
-                    'min': 100,
-                    'max': 10000,
-                    'time': '24 ساعة',
-                    'speed': 'متوسطة',
-                    'description': 'مشاهدات حقيقية عالية الجودة'
-                },
-                'srv2': {
-                    'id': 'srv2',
-                    'name': 'متابعين تيك توك',
-                    'price': 80,
-                    'min': 100,
-                    'max': 5000,
-                    'time': '48 ساعة',
-                    'speed': 'بطيئة',
-                    'description': 'متابعين حقيقيين'
-                }
-            }
-        }
-        
-        # قسم الألعاب والتطبيقات
-        db.categories['cat2'] = {
-            'id': 'cat2',
-            'name': 'خدمات الألعاب والتطبيقات 💬',
-            'type': 'ألعاب',
-            'description': 'خدمات للألعاب والتطبيقات',
-            'services': {
-                'srv3': {
-                    'id': 'srv3',
-                    'name': 'مشاهدات تطبيقات',
-                    'price': 60,
-                    'min': 100,
-                    'max': 10000,
-                    'time': '12 ساعة',
-                    'speed': 'سريعة',
-                    'description': 'زيادة مشاهدات التطبيقات'
-                }
-            }
-        }
-        
-        db.save_json('categories', db.categories)
-        print("✅ تم إنشاء بيانات تجريبية")
-    
+    # لا ننشئ أي بيانات تجريبية - الأقسام والخدمات فارغة كما طلبت
+    print("⚠️ الأقسام والخدمات فارغة - يمكن إضافتها من لوحة التحكم")
     main()
